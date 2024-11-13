@@ -6,7 +6,6 @@ google-pasta==0.2.0
 huggingface-hub==0.26.2
 ipykernel==6.20.2
 ipython==8.9.0
-ISLP==0.3.22
 joblib==1.2.0
 jsonify==0.5
 jupyter_client==8.0.1

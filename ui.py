@@ -2,8 +2,12 @@ import streamlit as st
 import os
 import json
 import time
+import numpy as np
 from PIL import Image
 from transformers import BlipProcessor, BlipForConditionalGeneration
+from sentence_transformers import SentenceTransformer
+from sklearn.feature_extraction.text import TfidfVectorizer
+from scipy.spatial.distance import cosine
 from supabase import create_client
 from dotenv import load_dotenv
 
@@ -20,8 +24,11 @@ processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-larg
 model = BlipForConditionalGeneration.from_pretrained(
     "Salesforce/blip-image-captioning-large"
 )
+st_model = SentenceTransformer("all-mpnet-base-v2")
+tfidf_vectorizer = TfidfVectorizer()
 
 
+# Function to generate image captions and tags
 def get_image_tags(image_path):
     """Generate detailed captions and tags using the BLIP model."""
     image = Image.open(image_path).convert("RGB")
@@ -36,17 +43,6 @@ def get_image_tags(image_path):
     return caption, list(tags)
 
 
-def process_image(image_file):
-    """Process a single image file: generate captions and tags."""
-    image_path = f"temp_{int(time.time())}.jpg"
-    with open(image_path, "wb") as f:
-        f.write(image_file.getbuffer())
-
-    caption, tags = get_image_tags(image_path)
-    os.remove(image_path)  # Clean up the temp file
-    return caption, tags
-
-
 def save_image_to_db(image_url, caption, tags):
     """Save the image details (URL, caption, tags) to Supabase."""
     response = (
@@ -55,9 +51,19 @@ def save_image_to_db(image_url, caption, tags):
         .execute()
     )
     if response:
-        st.success("Image uploaded and processed successfully!")
+        st.toast("Image uploaded and processed successfully!")
+        st.rerun()
     else:
-        st.error(f"Error saving image to the database: {response.error_message}")
+        st.error("Error saving image to the database.")
+
+
+def process_image(image_file):
+    image_path = f"temp_{int(time.time())}.jpg"
+    with open(image_path, "wb") as f:
+        f.write(image_file.getbuffer())
+    caption, tags = get_image_tags(image_path)
+    os.remove(image_path)
+    return caption, tags
 
 
 # Streamlit Configuration
@@ -68,6 +74,11 @@ st.write("Upload images to view, tag, and search.")
 # Sidebar for search
 st.sidebar.title("Search")
 search_query = st.sidebar.text_input("Search by caption or tags")
+
+st.sidebar.markdown("**Select Relevance Threshold**")
+threshold = st.sidebar.slider(
+    "", min_value=0.2, max_value=0.5, value=0.5, step=0.01, label_visibility="collapsed"
+)
 
 # Image Upload
 st.subheader("Upload a New Image")
@@ -93,50 +104,53 @@ if uploaded_files:
 
             # Step 4: Save the image details (URL, caption, tags) to the database
             save_image_to_db(image_url, caption, tags)
-
         else:
             st.error(f"Error uploading image: {uploaded_file.name}")
 
-# Display Image Gallery
-st.subheader("Image Gallery")
 
-
-# Function to fetch images based on search query
-def fetch_images(query=None):
-    """Fetch images from Supabase based on search query."""
-    try:
-        response = supabase.table("images").select("*").execute()
-        if response:
-            images = response.data
-            if query:
-                # Filter images by caption or tags based on the query
-                images = [
-                    image
-                    for image in images
-                    if query.lower() in image["caption"].lower()
-                    or any(query.lower() in tag for tag in image["tags"])
-                ]
-            return images
-        else:
-            return []
-    except Exception as e:
-        print(f"Error fetching images: {e}")
+# Functions to fetch and rank images
+def fetch_images():
+    response = supabase.table("images").select("*").execute()
+    if response:
+        return response.data
+    else:
         return []
 
 
+def get_literal_similarity(query, image_tags):
+    all_tags = " ".join(image_tags)
+    X = tfidf_vectorizer.fit_transform([query, all_tags])
+    return 1 - cosine(X[0].toarray().flatten(), X[1].toarray().flatten())
+
+
+def get_semantic_similarity(query, image_tags):
+    query_embed = st_model.encode(query)
+    tags_embed = st_model.encode(image_tags)
+    tags_mean_embed = np.mean(tags_embed, axis=0)
+    return 1 - cosine(query_embed, tags_mean_embed)
+
+
+def rank_images(images, query, threshold):
+    ranked_images = []
+    for image in images:
+        literal_sim = get_literal_similarity(query, image["tags"])
+        semantic_sim = get_semantic_similarity(query, image["tags"])
+        total_score = literal_sim + semantic_sim
+        if total_score >= threshold:
+            ranked_images.append((image, total_score))
+    return [img[0] for img in sorted(ranked_images, key=lambda x: x[1], reverse=True)]
+
+
 # Fetch and display images in the gallery
-images = fetch_images(search_query)
+images = fetch_images()
+if search_query:
+    images = rank_images(images, search_query, threshold)
 
 if images:
     cols = st.columns(3)
     for i, image in enumerate(images):
         with cols[i % 3]:
-            cap = f"{image['caption']} | Tags: {image['tags']}"
-            # cap = f"{image['caption']} | Tags: {', '.join(image['tags'])}"
-            st.image(
-                image["image_url"],
-                caption=cap,
-                use_container_width=True,
-            )
+            caption_text = f"{image['caption']} | Tags: {', '.join(image['tags'])}"
+            st.image(image["image_url"], caption=caption_text, use_container_width=True)
 else:
     st.warning("No images available matching your search.")

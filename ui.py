@@ -97,9 +97,6 @@ if uploaded_files:
         else:
             st.error(f"Error uploading image: {uploaded_file.name}")
 
-    # Reload the page to update the gallery with newly uploaded images
-    st.experimental_rerun()
-
 # Display Image Gallery
 st.subheader("Image Gallery")
 

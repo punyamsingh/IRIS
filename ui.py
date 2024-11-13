@@ -19,16 +19,31 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 # Initialize Supabase client
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Initialize the BLIP model and processor
-processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-large")
-model = BlipForConditionalGeneration.from_pretrained(
-    "Salesforce/blip-image-captioning-large"
-)
-st_model = SentenceTransformer("all-mpnet-base-v2")
+
+@st.cache_resource
+def load_blip_model():
+    # Initialize the BLIP model and processor
+    processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-large")
+    model = BlipForConditionalGeneration.from_pretrained(
+        "Salesforce/blip-image-captioning-large"
+    )
+    return processor, model
+
+
+@st.cache_resource
+def load_sentence_model():
+    # Load the Sentence Transformer model
+    return SentenceTransformer("all-mpnet-base-v2")
+
+
+# Load models
+processor, model = load_blip_model()
+st_model = load_sentence_model()
 tfidf_vectorizer = TfidfVectorizer()
 
 
 # Function to generate image captions and tags
+@st.cache_data
 def get_image_tags(image_path):
     """Generate detailed captions and tags using the BLIP model."""
     image = Image.open(image_path).convert("RGB")
@@ -43,6 +58,7 @@ def get_image_tags(image_path):
     return caption, list(tags)
 
 
+@st.cache_data
 def save_image_to_db(image_url, caption, tags):
     """Save the image details (URL, caption, tags) to Supabase."""
     response = (
@@ -109,6 +125,7 @@ if uploaded_files:
 
 
 # Functions to fetch and rank images
+@st.cache_data
 def fetch_images():
     response = supabase.table("images").select("*").execute()
     if response:
@@ -117,12 +134,14 @@ def fetch_images():
         return []
 
 
+@st.cache_data
 def get_literal_similarity(query, image_tags):
     all_tags = " ".join(image_tags)
     X = tfidf_vectorizer.fit_transform([query, all_tags])
     return 1 - cosine(X[0].toarray().flatten(), X[1].toarray().flatten())
 
 
+@st.cache_data
 def get_semantic_similarity(query, image_tags):
     query_embed = st_model.encode(query)
     tags_embed = st_model.encode(image_tags)

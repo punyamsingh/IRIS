@@ -54,7 +54,7 @@ def save_image_to_db(image_url, caption, tags):
         .insert({"image_url": image_url, "caption": caption, "tags": tags})
         .execute()
     )
-
+    print(response)
     if response.status_code == 201:
         st.success("Image uploaded and processed successfully!")
     else:
@@ -135,9 +135,11 @@ if images:
     cols = st.columns(3)
     for i, image in enumerate(images):
         with cols[i % 3]:
+            cap = f"{image['caption']} | Tags: {image['tags']}"
+            # cap = f"{image['caption']} | Tags: {', '.join(image['tags'])}"
             st.image(
                 image["image_url"],
-                caption=f"{image['caption']} | Tags: {', '.join(image['tags'])}",
+                caption=cap,
                 use_container_width=True,
             )
 else:

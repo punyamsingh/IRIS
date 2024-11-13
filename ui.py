@@ -19,9 +19,39 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Streamlit Configuration
-st.set_page_config(page_title="IRIS Smart Gallery", layout="wide")
-st.title("IRIS Smart Gallery")
+st.set_page_config(
+    page_title="IRIS Smart Gallery", layout="wide", page_icon="logo-modified.png"
+)
+# Display the logo on the main page
+# st.image("logo-modified2.png", width=100)
+# st.title("IRIS Smart Gallery")
+
+# Display the logo and title in the same row
+col1, col2 = st.columns([0.1, 0.9])  # Adjust the column widths as needed
+
+with col1:
+    st.image("logo-modified2.png", width=100)
+
+with col2:
+    # Using markdown to align the title vertically in the center
+    st.markdown(
+        """
+        <style>
+        .title-container {
+            display: flex;
+            justify-content: center;
+            align-items: top;
+            height: 100%;
+        }
+        </style>
+        <div class="title-container">
+            <h1>IRIS Smart Gallery</h1>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 st.write("Upload images to view, tag, and search.")
+
 
 @st.cache_resource
 def load_blip_model():
@@ -83,6 +113,7 @@ def process_image(image_file):
     caption, tags = get_image_tags(image_path)
     os.remove(image_path)
     return caption, tags
+
 
 # Sidebar for search
 st.sidebar.title("Search")
@@ -163,9 +194,9 @@ if search_query:
     images = rank_images(images, search_query, threshold)
 
 if images:
-    cols = st.columns(3)
+    cols = st.columns(4)
     for i, image in enumerate(images):
-        with cols[i % 3]:
+        with cols[i % 4]:
             caption_text = f"{image['caption']} | Tags: {', '.join(image['tags'])}"
             st.image(image["image_url"], caption=caption_text, use_container_width=True)
 else:

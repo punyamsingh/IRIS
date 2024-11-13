@@ -54,8 +54,7 @@ def save_image_to_db(image_url, caption, tags):
         .insert({"image_url": image_url, "caption": caption, "tags": tags})
         .execute()
     )
-    print(response)
-    if response.status_code == 201:
+    if response:
         st.success("Image uploaded and processed successfully!")
     else:
         st.error(f"Error saving image to the database: {response.error_message}")

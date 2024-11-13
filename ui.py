@@ -1,6 +1,5 @@
 import streamlit as st
 import os
-import json
 import time
 import numpy as np
 from PIL import Image
@@ -19,6 +18,10 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 # Initialize Supabase client
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# Streamlit Configuration
+st.set_page_config(page_title="IRIS Smart Gallery", layout="wide")
+st.title("IRIS Smart Gallery")
+st.write("Upload images to view, tag, and search.")
 
 @st.cache_resource
 def load_blip_model():
@@ -80,12 +83,6 @@ def process_image(image_file):
     caption, tags = get_image_tags(image_path)
     os.remove(image_path)
     return caption, tags
-
-
-# Streamlit Configuration
-st.set_page_config(page_title="IRIS Smart Gallery", layout="wide")
-st.title("IRIS Smart Gallery")
-st.write("Upload images to view, tag, and search.")
 
 # Sidebar for search
 st.sidebar.title("Search")

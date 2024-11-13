@@ -1,8 +1,5 @@
 clip @ git+https://github.com/openai/CLIP.git@dcba3cb2e2827b402d2701e7e1c7d9fed8a20ef1
 GitPython==3.1.43
-google-auth==2.16.0
-google-auth-oauthlib==0.4.6
-google-pasta==0.2.0
 huggingface-hub==0.26.2
 ipykernel==6.20.2
 ipython==8.9.0

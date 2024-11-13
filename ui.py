@@ -17,13 +17,16 @@ st.set_page_config(page_title="IRIS Smart Gallery", layout="wide")
 st.title("IRIS Smart Gallery")
 st.write("Upload images to view, tag, and search.")
 
-# Image upload widget (allow multiple files)
-st.subheader("Upload New Images")
+# Image upload widget
+st.subheader("Upload a New Image")
 uploaded_files = st.file_uploader(
-    "Choose images...", type=["jpg", "jpeg", "png", "webp"], accept_multiple_files=True
+    "Choose an image...",
+    type=["jpg", "jpeg", "png", "webp"],
+    accept_multiple_files=True,
 )
 
 if uploaded_files is not None:
+    # Loop through the uploaded files and upload them one by one
     for uploaded_file in uploaded_files:
         # Generate a unique file name based on timestamp and original name
         file_name = f"{int(time.time())}_{uploaded_file.name}"
@@ -43,12 +46,15 @@ if uploaded_files is not None:
             # Save image info (including URL) to the Supabase database
             supabase.table("images").insert({"image_url": image_url}).execute()
 
-            st.success(f"Image {uploaded_file.name} uploaded successfully!")
-        else:
-            st.error(
-                f"Error uploading image {uploaded_file.name}: "
-                + response["error"]["message"]
+            # Display a success message temporarily
+            success_message = st.empty()  # Create an empty container for the message
+            success_message.success(
+                f"Image {uploaded_file.name} uploaded successfully!"
             )
+            time.sleep(1)  # Wait for 1 second before clearing the message
+            success_message.empty()  # Clear the success message
+        else:
+            st.error("Error uploading image: " + response["error"]["message"])
 
 # Display Image Gallery
 st.subheader("Image Gallery")
@@ -61,10 +67,8 @@ def fetch_all_images():
         if response:
             images = response.data  # List of images with metadata
             if images:
-                return images
-            else:
-                print("No images found.")
-                return []
+                print(f"Fetched images: {images}")  # Debugging line
+            return images
         else:
             print(f"Error fetching images: {response.error_message}")
             return []
@@ -76,12 +80,13 @@ def fetch_all_images():
 images = fetch_all_images()
 
 # Display images in a grid format
+cols = st.columns(3)
 if images:
-    cols = st.columns(3)
     for i, image in enumerate(images):
         with cols[i % 3]:
             image_url = image["image_url"]
-            image_caption = image.get("caption", "No caption available")
+            image_caption = image["caption"] if "caption" in image else ""
+
             st.image(image_url, caption=image_caption, use_container_width=True)
 else:
     st.warning("No images available.")

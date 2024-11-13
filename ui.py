@@ -2,11 +2,8 @@ import streamlit as st
 import os
 import json
 import time
-import torch
 from PIL import Image
 from transformers import BlipProcessor, BlipForConditionalGeneration
-from sentence_transformers import SentenceTransformer
-from scipy.spatial.distance import cosine
 from supabase import create_client
 from dotenv import load_dotenv
 
@@ -23,9 +20,6 @@ processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-larg
 model = BlipForConditionalGeneration.from_pretrained(
     "Salesforce/blip-image-captioning-large"
 )
-
-# Initialize the Sentence Transformer model
-st_model = SentenceTransformer("all-mpnet-base-v2")
 
 
 def get_image_tags(image_path):
@@ -55,7 +49,6 @@ def process_image(image_file):
 
 def save_image_to_db(image_url, caption, tags):
     """Save the image details (URL, caption, tags) to Supabase."""
-    # Insert image info (URL, caption, and tags) into the Supabase database
     response = (
         supabase.table("images")
         .insert({"image_url": image_url, "caption": caption, "tags": tags})
@@ -65,7 +58,7 @@ def save_image_to_db(image_url, caption, tags):
     if response.status_code == 201:
         st.success("Image uploaded and processed successfully!")
     else:
-        st.error("Error saving image to the database.")
+        st.error(f"Error saving image to the database: {response.error_message}")
 
 
 # Streamlit Configuration

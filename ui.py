@@ -107,6 +107,10 @@ threshold = st.sidebar.slider(
     "Relevance Threshold", min_value=0.2, max_value=0.5, value=0.5, step=0.01
 )
 
+# Add a refresh button above the gallery
+if st.button("Refresh Gallery"):
+    st.rerun()
+
 # Image Upload
 st.subheader("Upload a New Image")
 uploaded_files = st.file_uploader(
@@ -114,20 +118,46 @@ uploaded_files = st.file_uploader(
 )
 
 if uploaded_files:
-    for uploaded_file in uploaded_files:
-        caption, tags = process_image(uploaded_file)
-        file_name = f"{int(time.time())}_{uploaded_file.name}"
-        file_data = compress_image(uploaded_file).read()
-        response = supabase.storage.from_("images").upload(
-            file_name, file_data, {"contentType": "image/jpeg"}
-        )
-        if response:
-            image_url = supabase.storage.from_("images").get_public_url(file_name)
-            save_image_to_db(image_url, caption, tags)
-        else:
-            st.error(f"Error uploading image: {uploaded_file.name}")
+    uploaded_status = []
+    progress_bar = st.progress(0)  # Progress bar for tracking uploads
+    total_files = len(uploaded_files)
 
-    st.success("Images uploaded successfully. Refresh the gallery to view them.")
+    for idx, uploaded_file in enumerate(uploaded_files):
+        with st.spinner(
+            f"Processing {uploaded_file.name}..."
+        ):  # Spinner for real-time feedback
+            try:
+                caption, tags = process_image(uploaded_file)
+                file_name = f"{int(time.time())}_{uploaded_file.name}"
+                file_data = compress_image(uploaded_file).read()
+                response = supabase.storage.from_("images").upload(
+                    file_name, file_data, {"contentType": "image/jpeg"}
+                )
+                if response:
+                    image_url = supabase.storage.from_("images").get_public_url(
+                        file_name
+                    )
+                    save_image_to_db(image_url, caption, tags)
+                    uploaded_status.append((uploaded_file.name, "success"))
+                else:
+                    uploaded_status.append((uploaded_file.name, "failed"))
+            except Exception as e:
+                uploaded_status.append((uploaded_file.name, f"error: {e}"))
+
+            # Update progress bar
+            progress_bar.progress((idx + 1) / total_files)
+
+    # Display upload status
+    for file_name, status in uploaded_status:
+        if status == "success":
+            st.toast(f"{file_name} uploaded successfully.")
+        elif status == "failed":
+            st.toast(f"Error uploading {file_name}.")
+        else:
+            st.toast(f"{file_name} encountered an error: {status}")
+
+    # Reset uploader state
+    # st.rerun()
 
 # Functions to fetch and rank images
 def fetch_images():
@@ -163,7 +193,7 @@ def rank_images(images, query, threshold):
 
 
 # Pagination
-images_per_page = 8
+images_per_page = 20
 all_images = fetch_images()
 
 if search_query:
@@ -190,5 +220,4 @@ else:
                 caption_text = f"{image['caption']} | Tags: {', '.join(image['tags'])}"
             else:
                 caption_text = "None"
-            # caption_text = f"{image['caption']} | Tags: {', '.join(image['tags'])}"
             st.image(image["image_url"], caption=caption_text, use_container_width=True)

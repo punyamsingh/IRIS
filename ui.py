@@ -24,24 +24,9 @@ st.set_page_config(
     page_title="IRIS Smart Gallery", layout="wide", page_icon="logo-modified.png"
 )
 
-# Display the logo and title in the same row
-col1, col2 = st.columns([0.1, 0.9])  # Adjust the column widths as needed
-with col1:
-    st.image("logo-modified2.png", width=100)
-with col2:
-    st.markdown(
-        """
-        <div style="text-align:center;">
-            <h1>IRIS Smart Gallery</h1>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-st.write("Upload images to view, tag, and search.")
-
 
 # Load models
+@st.cache_resource
 def load_blip_model():
     processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-large")
     model = BlipForConditionalGeneration.from_pretrained(
@@ -50,6 +35,7 @@ def load_blip_model():
     return processor, model
 
 
+@st.cache_resource
 def load_sentence_model():
     return SentenceTransformer("all-mpnet-base-v2")
 
@@ -57,6 +43,13 @@ def load_sentence_model():
 processor, model = load_blip_model()
 st_model = load_sentence_model()
 tfidf_vectorizer = TfidfVectorizer()
+
+# Sidebar search functionality
+st.sidebar.title("Search")
+search_query = st.sidebar.text_input("Search by caption or tags")
+threshold = st.sidebar.slider(
+    "Relevance Threshold", min_value=0.2, max_value=0.5, value=0.5, step=0.01
+)
 
 
 # Image compression function
@@ -100,66 +93,7 @@ def process_image(image_file):
     return caption, tags
 
 
-# Sidebar search functionality
-st.sidebar.title("Search")
-search_query = st.sidebar.text_input("Search by caption or tags")
-threshold = st.sidebar.slider(
-    "Relevance Threshold", min_value=0.2, max_value=0.5, value=0.5, step=0.01
-)
-
-# Add a refresh button above the gallery
-if st.button("Refresh Gallery"):
-    st.rerun()
-
-# Image Upload
-st.subheader("Upload a New Image")
-uploaded_files = st.file_uploader(
-    "Choose images...", type=["jpg", "jpeg", "png", "webp"], accept_multiple_files=True
-)
-
-if uploaded_files:
-    uploaded_status = []
-    progress_bar = st.progress(0)  # Progress bar for tracking uploads
-    total_files = len(uploaded_files)
-
-    for idx, uploaded_file in enumerate(uploaded_files):
-        with st.spinner(
-            f"Processing {uploaded_file.name}..."
-        ):  # Spinner for real-time feedback
-            try:
-                caption, tags = process_image(uploaded_file)
-                file_name = f"{int(time.time())}_{uploaded_file.name}"
-                file_data = compress_image(uploaded_file).read()
-                response = supabase.storage.from_("images").upload(
-                    file_name, file_data, {"contentType": "image/jpeg"}
-                )
-                if response:
-                    image_url = supabase.storage.from_("images").get_public_url(
-                        file_name
-                    )
-                    save_image_to_db(image_url, caption, tags)
-                    uploaded_status.append((uploaded_file.name, "success"))
-                else:
-                    uploaded_status.append((uploaded_file.name, "failed"))
-            except Exception as e:
-                uploaded_status.append((uploaded_file.name, f"error: {e}"))
-
-            # Update progress bar
-            progress_bar.progress((idx + 1) / total_files)
-
-    # Display upload status
-    for file_name, status in uploaded_status:
-        if status == "success":
-            st.toast(f"{file_name} uploaded successfully.")
-        elif status == "failed":
-            st.toast(f"Error uploading {file_name}.")
-        else:
-            st.toast(f"{file_name} encountered an error: {status}")
-
-    # Reset uploader state
-    # st.rerun()
-
-# Functions to fetch and rank images
+# Fetch and rank images
 def fetch_images():
     response = supabase.table("images").select("*").execute()
     if response:
@@ -192,32 +126,110 @@ def rank_images(images, query, threshold):
     return [img[0] for img in sorted(ranked_images, key=lambda x: x[1], reverse=True)]
 
 
-# Pagination
-images_per_page = 20
-all_images = fetch_images()
+# Manual Refresh Gallery using Fragment
+@st.fragment
+def gallery():
 
-if search_query:
-    all_images = rank_images(all_images, search_query, threshold)
+    images_per_page = 20
+    all_images = fetch_images()
+    cola, colb = st.columns([0.9, 0.1])  # Adjust the column widths as needed
+    with cola:
+        st.subheader("Image Gallery")
+    with colb:
+        if st.button("🔄", key="refresh_gallery"):
+            st.rerun(scope="fragment")
+    
 
-if len(all_images) == 0:
-    st.info("No images found in the gallery.")
-else:
-    total_pages = (len(all_images) - 1) // images_per_page + 1
-    current_page = st.session_state.get("current_page", 1)
-    if current_page < 1 or current_page > total_pages:
-        current_page = 1
+    if search_query:
+        all_images = rank_images(all_images, search_query, threshold)
 
-    # Pagination Controls
-    start_idx = (current_page - 1) * images_per_page
-    end_idx = start_idx + images_per_page
-    images = all_images[start_idx:end_idx]
+    if len(all_images) == 0:
+        st.info("No images found in the gallery.")
+    else:
+        total_pages = (len(all_images) - 1) // images_per_page + 1
+        current_page = st.session_state.get("current_page", 1)
 
-    # Display Gallery
-    cols = st.columns(4)
-    for i, image in enumerate(images):
-        with cols[i % 4]:
-            if image["tags"]:
-                caption_text = f"{image['caption']} | Tags: {', '.join(image['tags'])}"
+        if current_page < 1 or current_page > total_pages:
+            current_page = 1
+
+        # Pagination Controls
+        start_idx = (current_page - 1) * images_per_page
+        end_idx = start_idx + images_per_page
+        images = all_images[start_idx:end_idx]
+
+        # Display Gallery
+        cols = st.columns(4)
+        for i, image in enumerate(images):
+            with cols[i % 4]:
+                if image["tags"]:
+                    caption_text = (
+                        f"{image['caption']} | Tags: {', '.join(image['tags'])}"
+                    )
+                else:
+                    caption_text = "None"
+                st.image(
+                    image["image_url"], caption=caption_text, use_container_width=True
+                )
+
+
+@st.fragment
+def uploader():
+    st.subheader("Upload a New Image")
+    uploaded_files = st.file_uploader(
+        "Choose images...",
+        type=["jpg", "jpeg", "png", "webp"],
+        accept_multiple_files=True,
+    )
+    if uploaded_files:
+        uploaded_status = []
+        progress_bar = st.progress(0)  # Progress bar for tracking uploads
+        total_files = len(uploaded_files)
+
+        for idx, uploaded_file in enumerate(uploaded_files):
+            with st.spinner(f"Processing {uploaded_file.name}..."):
+                try:
+                    caption, tags = process_image(uploaded_file)
+                    file_name = f"{int(time.time())}_{uploaded_file.name}"
+                    file_data = compress_image(uploaded_file).read()
+                    response = supabase.storage.from_("images").upload(
+                        file_name, file_data, {"contentType": "image/jpeg"}
+                    )
+                    if response:
+                        image_url = supabase.storage.from_("images").get_public_url(
+                            file_name
+                        )
+                        save_image_to_db(image_url, caption, tags)
+                        uploaded_status.append((uploaded_file.name, "success"))
+                    else:
+                        uploaded_status.append((uploaded_file.name, "failed"))
+                except Exception as e:
+                    uploaded_status.append((uploaded_file.name, f"error: {e}"))
+                progress_bar.progress((idx + 1) / total_files)
+
+        for file_name, status in uploaded_status:
+            if status == "success":
+                st.toast(f"{file_name} uploaded successfully.")
+            elif status == "failed":
+                st.toast(f"Error uploading {file_name}.")
             else:
-                caption_text = "None"
-            st.image(image["image_url"], caption=caption_text, use_container_width=True)
+                st.toast(f"{file_name} encountered an error: {status}")
+
+
+@st.fragment
+def header():
+    col1, col2 = st.columns([0.1, 0.9])  # Adjust the column widths as needed
+    with col1:
+        st.image("logo-modified2.png", width=100)
+    with col2:
+        st.markdown(
+            """
+            <div style="text-align:center;">
+                <h1>IRIS Smart Gallery</h1>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+header()  # Displays the header with the refresh button
+uploader()  # Displays the uploader
+gallery()  # Displays the gallery

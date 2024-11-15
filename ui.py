@@ -121,8 +121,8 @@ def process_image(image_file):
 
     # Check for duplicates
     if is_duplicate_image(image_hash):
-        st.warning(f"Image already exists in the database.")
-        return None, None
+        st.warning("Image already exists in the database.")
+        return None, None, None  # Ensure it returns three `None` values
 
     # Compress and process the image
     image_path = f"temp_{int(time.time())}.jpg"
@@ -133,7 +133,6 @@ def process_image(image_file):
     caption, tags = get_image_tags(image_path)
     os.remove(image_path)
     return caption, tags, image_hash
-
 
 # Sidebar search functionality
 st.sidebar.title("Search")
@@ -151,9 +150,11 @@ uploaded_files = st.file_uploader(
 # Update main logic to save hash
 if uploaded_files:
     for uploaded_file in uploaded_files:
-        caption, tags, image_hash = process_image(uploaded_file)
-        if caption is None:  # Duplicate image
+        result = process_image(uploaded_file)
+        if result is None:  # Duplicate image detected
             continue
+
+        caption, tags, image_hash = result
 
         # Upload to storage bucket
         file_name = f"{image_hash}_{uploaded_file.name}"

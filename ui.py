@@ -219,7 +219,7 @@ def uploader():
 def header():
     col1, col2 = st.columns([0.1, 0.9])  # Adjust the column widths as needed
     with col1:
-        st.image("logo-modified.png", width=100)
+        st.image("logos/logo-modified.png", width=100)
     with col2:
         st.markdown(
             """

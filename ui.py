@@ -225,5 +225,6 @@ else:
     cols = st.columns(4)
     for i, image in enumerate(images):
         with cols[i % 4]:
-            caption_text = f"{image['caption']} | Tags: {', '.join(image['tags'])}"
+            # caption_text = f"{image['caption']} | Tags: {', '.join(image['tags'])}"
+            caption_text = f"{image['caption']} | Tags: {image['tags']}"
             st.image(image["image_url"], caption=caption_text, use_container_width=True)

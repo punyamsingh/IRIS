@@ -165,7 +165,7 @@ def rank_images(images, query, threshold):
 
 
 # Pagination
-images_per_page = 8
+images_per_page = 20
 all_images = fetch_images()
 
 if search_query:

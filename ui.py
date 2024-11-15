@@ -10,6 +10,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from scipy.spatial.distance import cosine
 from supabase import create_client
 from dotenv import load_dotenv
+import hashlib
 
 # Load environment variables
 load_dotenv()
@@ -71,6 +72,18 @@ def compress_image(image_file, max_size=500):
     output.seek(0)
     return output
 
+# Generate image hash
+def generate_image_hash(image_file):
+    image = Image.open(image_file).convert("RGB")
+    buffer = BytesIO()
+    image.save(buffer, format="JPEG")
+    image_bytes = buffer.getvalue()
+    return hashlib.sha256(image_bytes).hexdigest()
+
+
+def is_duplicate_image(image_hash):
+    response = supabase.table("images").select("id").eq("hash", image_hash).execute()
+    return len(response.data) > 0
 
 # Generate captions and tags
 def get_image_tags(image_path):
@@ -84,10 +97,18 @@ def get_image_tags(image_path):
     return caption, list(tags)
 
 
-def save_image_to_db(image_url, caption, tags):
+# Modify `save_image_to_db` to include the hash
+def save_image_to_db(image_url, caption, tags, image_hash):
     response = (
         supabase.table("images")
-        .insert({"image_url": image_url, "caption": caption, "tags": tags})
+        .insert(
+            {
+                "image_url": image_url,
+                "caption": caption,
+                "tags": tags,
+                "hash": image_hash,
+            }
+        )
         .execute()
     )
     if not response:
@@ -95,13 +116,23 @@ def save_image_to_db(image_url, caption, tags):
 
 
 def process_image(image_file):
+    # Generate hash for the image
+    image_hash = generate_image_hash(image_file)
+
+    # Check for duplicates
+    if is_duplicate_image(image_hash):
+        st.warning(f"Image already exists in the database.")
+        return None, None
+
+    # Compress and process the image
     image_path = f"temp_{int(time.time())}.jpg"
     compressed_image = compress_image(image_file)
     with open(image_path, "wb") as f:
         f.write(compressed_image.getbuffer())
+
     caption, tags = get_image_tags(image_path)
     os.remove(image_path)
-    return caption, tags
+    return caption, tags, image_hash
 
 
 # Sidebar search functionality
@@ -117,17 +148,23 @@ uploaded_files = st.file_uploader(
     "Choose images...", type=["jpg", "jpeg", "png", "webp"], accept_multiple_files=True
 )
 
+# Update main logic to save hash
 if uploaded_files:
     for uploaded_file in uploaded_files:
-        caption, tags = process_image(uploaded_file)
-        file_name = f"{int(time.time())}_{uploaded_file.name}"
+        caption, tags, image_hash = process_image(uploaded_file)
+        if caption is None:  # Duplicate image
+            continue
+
+        # Upload to storage bucket
+        file_name = f"{image_hash}_{uploaded_file.name}"
         file_data = compress_image(uploaded_file).read()
         response = supabase.storage.from_("images").upload(
             file_name, file_data, {"contentType": "image/jpeg"}
         )
+
         if response:
             image_url = supabase.storage.from_("images").get_public_url(file_name)
-            save_image_to_db(image_url, caption, tags)
+            save_image_to_db(image_url, caption, tags, image_hash)
         else:
             st.error(f"Error uploading image: {uploaded_file.name}")
 

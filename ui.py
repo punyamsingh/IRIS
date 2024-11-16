@@ -126,66 +126,198 @@ def rank_images(images, query, threshold):
     return [img[0] for img in sorted(ranked_images, key=lambda x: x[1], reverse=True)]
 
 
-# Manual Refresh Gallery using Fragment
+def delete_from_database(image_id):
+    """
+    Deletes an image record from the Supabase database.
+
+    Args:
+        image_id (str): The ID of the image to delete.
+    """
+    response = supabase.table("images").delete().eq("id", image_id).execute()
+
+    if response.status_code == 200:
+        st.success("Image record deleted from the database.")
+    else:
+        st.error("Failed to delete image record from the database.")
+        st.error(response.json())
+
+
+def delete_from_bucket(image_url):
+    """
+    Deletes an image file from the Supabase storage bucket.
+
+    Args:
+        image_url (str): The URL of the image to delete.
+    """
+    # Extract the bucket name and file path from the URL
+    bucket_name = "your_bucket_name"  # Replace with your Supabase bucket name
+    file_path = image_url.split(
+        f"{SUPABASE_URL}/storage/v1/object/public/{bucket_name}/"
+    )[-1]
+
+    response = supabase.storage.from_(bucket_name).remove([file_path])
+
+    if response.get("error") is None:
+        st.success("Image deleted from the storage bucket.")
+    else:
+        st.error("Failed to delete image from the storage bucket.")
+        st.error(response.get("error"))
+
+
+def delete_image(image_id, image_url):
+    # Delete from database
+    delete_from_database(image_id)  # Custom function to delete entry from DB
+
+    # Delete from storage bucket
+    delete_from_bucket(image_url)  # Custom function to delete from Supabase bucket
+
+
 @st.fragment
 def gallery():
-
     images_per_page = 20
     all_images = fetch_images()
-    cola, colb = st.columns([0.9, 0.1])  # Adjust the column widths as needed
+
+    # Sort images by upload time (newest first)
+    all_images = sorted(
+        all_images, key=lambda x: x.get("upload_time", ""), reverse=True
+    )
+
+    # Refresh button
+    cola, colb = st.columns([0.93, 0.07])  # Adjust column widths
     with cola:
         st.subheader("Image Gallery")
     with colb:
         if st.button("🔄", key="refresh_gallery"):
-            st.rerun(scope="fragment")
-    
+            st.rerun()
 
-    if search_query:
-        all_images = rank_images(all_images, search_query, threshold)
-
+    # Handle empty gallery
     if len(all_images) == 0:
         st.info("No images found in the gallery.")
-    else:
-        total_pages = (len(all_images) - 1) // images_per_page + 1
-        current_page = st.session_state.get("current_page", 1)
+        return
 
-        if current_page < 1 or current_page > total_pages:
-            current_page = 1
+    # Pagination setup
+    total_pages = max((len(all_images) - 1) // images_per_page + 1, 1)
+    if "current_page" not in st.session_state:
+        st.session_state["current_page"] = 1
 
-        # Pagination Controls
-        start_idx = (current_page - 1) * images_per_page
-        end_idx = start_idx + images_per_page
-        images = all_images[start_idx:end_idx]
+    current_page = st.session_state["current_page"]
 
-        # Display Gallery
-        cols = st.columns(4)
-        for i, image in enumerate(images):
-            with cols[i % 4]:
-                if image["tags"]:
-                    caption_text = (
-                        f"{image['caption']} | Tags: {', '.join(image['tags'])}"
-                    )
-                else:
-                    caption_text = "None"
-                st.image(
-                    image["image_url"], caption=caption_text, use_container_width=True
+    # Enforce page boundaries
+    current_page = max(1, min(current_page, total_pages))
+    st.session_state["current_page"] = current_page
+
+    # Paginated images
+    start_idx = (current_page - 1) * images_per_page
+    end_idx = start_idx + images_per_page
+    images = all_images[start_idx:end_idx]
+
+    # Top Pagination Controls
+    st.divider()
+    col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
+    with col1:
+        if st.button("<< First", disabled=current_page == 1, key="top_first"):
+            st.session_state["current_page"] = 1
+    with col2:
+        if st.button("< Previous", disabled=current_page == 1, key="top_previous"):
+            st.session_state["current_page"] -= 1
+    with col3:
+        st.markdown(
+            f"<p style='text-align:center;'>Page {current_page} of {total_pages}</p>",
+            unsafe_allow_html=True,
+        )
+    with col4:
+        if st.button("Next >", disabled=current_page == total_pages, key="top_next"):
+            st.session_state["current_page"] += 1
+    with col5:
+        if st.button("Last >>", disabled=current_page == total_pages, key="top_last"):
+            st.session_state["current_page"] = total_pages
+
+    st.divider()
+
+    # Responsive layout: Determine the number of columns based on screen size
+    num_columns = 3
+    cols = st.columns(num_columns)
+
+    for i, image in enumerate(images):
+        with cols[i % num_columns]:
+            # Display the image with a delete button
+            col_img, col_del = st.columns([0.9, 0.1])
+            with col_img:
+                caption_text = (
+                    f"{image['caption']} | Tags: {', '.join(image['tags'])}"
+                    if image["tags"]
+                    else "None"
                 )
+                st.image(
+                    image["image_url"],
+                    caption=caption_text,
+                    use_container_width=True,
+                )
+            with col_del:
+                if st.button("❌", key=f"delete_{image['id']}"):
+                    # Confirmation prompt
+                    if st.warning(
+                        f"Are you sure you want to delete this image?",
+                        key=f"confirm_delete_{image['id']}",
+                    ):
+                        delete_image(image["id"], image["image_url"])  # Custom function
+                        st.success("Image deleted successfully.")
+                        st.rerun()  # Refresh gallery
+
+    # Bottom Pagination Controls
+    st.divider()
+    col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
+    with col1:
+        if st.button("<< First", disabled=current_page == 1, key="bottom_first"):
+            st.session_state["current_page"] = 1
+    with col2:
+        if st.button("< Previous", disabled=current_page == 1, key="bottom_previous"):
+            st.session_state["current_page"] -= 1
+    with col3:
+        st.markdown(
+            f"<p style='text-align:center;'>Page {current_page} of {total_pages}</p>",
+            unsafe_allow_html=True,
+        )
+    with col4:
+        if st.button("Next >", disabled=current_page == total_pages, key="bottom_next"):
+            st.session_state["current_page"] += 1
+    with col5:
+        if st.button(
+            "Last >>", disabled=current_page == total_pages, key="bottom_last"
+        ):
+            st.session_state["current_page"] = total_pages
+
+    st.divider()
 
 
 @st.fragment
 def uploader():
     st.subheader("Upload a New Image")
+
+    # Initialize session state for uploaded files
+    if "uploaded_files" not in st.session_state:
+        st.session_state["uploaded_files"] = []
+
     uploaded_files = st.file_uploader(
         "Choose images...",
         type=["jpg", "jpeg", "png", "webp"],
         accept_multiple_files=True,
+        key="file_uploader",
     )
+
+    # Store newly uploaded files in session state
     if uploaded_files:
+        for file in uploaded_files:
+            if file.name not in [f.name for f in st.session_state["uploaded_files"]]:
+                st.session_state["uploaded_files"].append(file)
+
+    # Process uploaded files
+    if st.session_state["uploaded_files"]:
         uploaded_status = []
         progress_bar = st.progress(0)  # Progress bar for tracking uploads
-        total_files = len(uploaded_files)
+        total_files = len(st.session_state["uploaded_files"])
 
-        for idx, uploaded_file in enumerate(uploaded_files):
+        for idx, uploaded_file in enumerate(st.session_state["uploaded_files"]):
             with st.spinner(f"Processing {uploaded_file.name}..."):
                 try:
                     caption, tags = process_image(uploaded_file)
@@ -205,6 +337,9 @@ def uploader():
                 except Exception as e:
                     uploaded_status.append((uploaded_file.name, f"error: {e}"))
                 progress_bar.progress((idx + 1) / total_files)
+
+        # Clear the uploaded files from session state after processing
+        st.session_state["uploaded_files"] = []
 
         for file_name, status in uploaded_status:
             if status == "success":

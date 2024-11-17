@@ -135,41 +135,42 @@ def delete_from_database(image_id):
     """
     response = supabase.table("images").delete().eq("id", image_id).execute()
 
-    if response.status_code == 200:
-        st.success("Image record deleted from the database.")
-    else:
-        st.error("Failed to delete image record from the database.")
-        st.error(response.json())
+    st.success("Image deleted successfully.")
+    # if response["error"] is None:
+    #     st.success("Image deleted successfully.")
+    # else:
+    #     st.error("Failed to delete image.")
+    #     st.error(response["error"])
 
 
-def delete_from_bucket(image_url):
-    """
-    Deletes an image file from the Supabase storage bucket.
+# def delete_from_bucket(image_url):
+#     """
+#     Deletes an image file from the Supabase storage bucket.
 
-    Args:
-        image_url (str): The URL of the image to delete.
-    """
-    # Extract the bucket name and file path from the URL
-    bucket_name = "your_bucket_name"  # Replace with your Supabase bucket name
-    file_path = image_url.split(
-        f"{SUPABASE_URL}/storage/v1/object/public/{bucket_name}/"
-    )[-1]
+#     Args:
+#         image_url (str): The URL of the image to delete.
+#     """
+#     # Extract the bucket name and file path from the URL
+#     bucket_name = "your_bucket_name"  # Replace with your Supabase bucket name
+#     file_path = image_url.split(
+#         f"{SUPABASE_URL}/storage/v1/object/public/{bucket_name}/"
+#     )[-1]
 
-    response = supabase.storage.from_(bucket_name).remove([file_path])
+#     response = supabase.storage.from_(bucket_name).remove([file_path])
 
-    if response.get("error") is None:
-        st.success("Image deleted from the storage bucket.")
-    else:
-        st.error("Failed to delete image from the storage bucket.")
-        st.error(response.get("error"))
+#     if response.get("error") is None:
+#         st.success("Image deleted from the storage bucket.")
+#     else:
+#         st.error("Failed to delete image from the storage bucket.")
+#         st.error(response.get("error"))
 
 
-def delete_image(image_id, image_url):
-    # Delete from database
-    delete_from_database(image_id)  # Custom function to delete entry from DB
+# def delete_image(image_id, image_url):
+#     # Delete from database
+#     delete_from_database(image_id)  # Custom function to delete entry from DB
 
-    # Delete from storage bucket
-    delete_from_bucket(image_url)  # Custom function to delete from Supabase bucket
+# # Delete from storage bucket
+# delete_from_bucket(image_url)  # Custom function to delete from Supabase bucket
 
 
 @st.fragment
@@ -202,7 +203,7 @@ def gallery():
 
     current_page = st.session_state["current_page"]
 
-    # Enforce page boundaries
+    # Boundary checks
     current_page = max(1, min(current_page, total_pages))
     st.session_state["current_page"] = current_page
 
@@ -211,37 +212,35 @@ def gallery():
     end_idx = start_idx + images_per_page
     images = all_images[start_idx:end_idx]
 
-    # Top Pagination Controls
+    # Pagination controls (top)
     st.divider()
-    col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
-    with col1:
-        if st.button("<< First", disabled=current_page == 1, key="top_first"):
-            st.session_state["current_page"] = 1
-    with col2:
-        if st.button("< Previous", disabled=current_page == 1, key="top_previous"):
-            st.session_state["current_page"] -= 1
-    with col3:
-        st.markdown(
-            f"<p style='text-align:center;'>Page {current_page} of {total_pages}</p>",
-            unsafe_allow_html=True,
-        )
-    with col4:
-        if st.button("Next >", disabled=current_page == total_pages, key="top_next"):
-            st.session_state["current_page"] += 1
-    with col5:
-        if st.button("Last >>", disabled=current_page == total_pages, key="top_last"):
-            st.session_state["current_page"] = total_pages
-
+    pagination_controls(total_pages, current_page, position="top")
     st.divider()
 
-    # Responsive layout: Determine the number of columns based on screen size
+    # Display images in a grid layout
     num_columns = 3
     cols = st.columns(num_columns)
+
+    # Define the delete confirmation dialog
+    @st.dialog("Confirm Deletion")
+    def confirm_delete(image_id, caption_text):
+        st.warning(f"Are you sure you want to delete this image?\n\n**{caption_text}**")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Yes, delete"):
+                delete_from_database(image_id)  # Function to delete the image
+                st.success("Image deleted successfully.")
+                st.rerun()
+        with col2:
+            if st.button("No, cancel"):
+                st.info("Deletion canceled.")
+                st.rerun()
 
     for i, image in enumerate(images):
         with cols[i % num_columns]:
             # Display the image with a delete button
-            col_img, col_del = st.columns([0.9, 0.1])
+
+            col_img, col_del = st.columns([0.9, 0.2])
             with col_img:
                 caption_text = (
                     f"{image['caption']} | Tags: {', '.join(image['tags'])}"
@@ -255,39 +254,35 @@ def gallery():
                 )
             with col_del:
                 if st.button("❌", key=f"delete_{image['id']}"):
-                    # Confirmation prompt
-                    if st.warning(
-                        f"Are you sure you want to delete this image?",
-                        key=f"confirm_delete_{image['id']}",
-                    ):
-                        delete_image(image["id"], image["image_url"])  # Custom function
-                        st.success("Image deleted successfully.")
-                        st.rerun()  # Refresh gallery
+                    confirm_delete(image["id"], caption_text)
 
-    # Bottom Pagination Controls
+    # Pagination controls (bottom)
     st.divider()
+    pagination_controls(total_pages, current_page, position="bottom")
+    st.divider()
+
+
+def pagination_controls(total_pages, current_page, position):
+    """Renders pagination controls."""
     col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
     with col1:
-        if st.button("<< First", disabled=current_page == 1, key="bottom_first"):
+        if st.button(f"<< First ({position})", disabled=current_page == 1):
             st.session_state["current_page"] = 1
+            st.rerun()
     with col2:
-        if st.button("< Previous", disabled=current_page == 1, key="bottom_previous"):
+        if st.button(f"< Previous ({position})", disabled=current_page == 1):
             st.session_state["current_page"] -= 1
+            st.rerun()
     with col3:
-        st.markdown(
-            f"<p style='text-align:center;'>Page {current_page} of {total_pages}</p>",
-            unsafe_allow_html=True,
-        )
+        st.write(f"Page {current_page} of {total_pages}")
     with col4:
-        if st.button("Next >", disabled=current_page == total_pages, key="bottom_next"):
+        if st.button(f"Next > ({position})", disabled=current_page == total_pages):
             st.session_state["current_page"] += 1
+            st.rerun()
     with col5:
-        if st.button(
-            "Last >>", disabled=current_page == total_pages, key="bottom_last"
-        ):
+        if st.button(f"Last >> ({position})", disabled=current_page == total_pages):
             st.session_state["current_page"] = total_pages
-
-    st.divider()
+            st.rerun()
 
 
 @st.fragment

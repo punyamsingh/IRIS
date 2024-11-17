@@ -191,6 +191,9 @@ def gallery():
         if st.button("🔄", key="refresh_gallery"):
             st.rerun()
 
+    if search_query:
+        all_images = rank_images(all_images, search_query, threshold)
+
     # Handle empty gallery
     if len(all_images) == 0:
         st.info("No images found in the gallery.")

@@ -250,11 +250,14 @@ def gallery():
                     if image["tags"]
                     else "None"
                 )
-                st.image(
-                    image["image_url"],
-                    caption=caption_text,
-                    use_container_width=True,
-                )
+                try:
+                    st.image(
+                        image["image_url"],
+                        caption=caption_text,
+                        use_container_width=True,
+                    )
+                except Exception as e:
+                    st.error(f"Error displaying image: {e}")
             with col_del:
                 if st.button("❌", key=f"delete_{image['id']}"):
                     confirm_delete(image["id"], caption_text)

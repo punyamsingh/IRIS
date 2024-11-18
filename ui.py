@@ -8,8 +8,13 @@ from transformers import BlipProcessor, BlipForConditionalGeneration
 from sentence_transformers import SentenceTransformer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from scipy.spatial.distance import cosine
-from supabase import create_client
+from supabase import create_client, Client
 from dotenv import load_dotenv
+import nltk
+
+# Download stopwords
+nltk.download("stopwords")
+from nltk.corpus import stopwords
 
 # Load environment variables
 load_dotenv()
@@ -18,6 +23,9 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # Initialize Supabase client
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# Get the stopwords list (in English)
+stop_words = set(stopwords.words("english"))
 
 # Streamlit Configuration
 st.set_page_config(
@@ -61,6 +69,16 @@ def compress_image(image_file, max_size=500):
     return output
 
 
+def remove_stopwords(tags):
+    return [tag for tag in tags if tag.lower() not in stop_words]
+
+
+def remove_stopwords_from_query(query):
+    query_words = query.split()
+    filtered_query = [word for word in query_words if word.lower() not in stop_words]
+    return " ".join(filtered_query)
+
+
 # Function to generate image captions and tags
 def get_image_tags(image_path):
     image = Image.open(image_path).convert("RGB")
@@ -70,7 +88,7 @@ def get_image_tags(image_path):
     )[0]
     caption = processor.decode(output_ids, skip_special_tokens=True)
     tags = set(caption.lower().split())
-    return caption, list(tags)
+    return caption, remove_stopwords(tags)
 
 
 def save_image_to_db(image_url, caption, tags):
@@ -116,6 +134,7 @@ def get_semantic_similarity(query, image_tags):
 
 
 def rank_images(images, query, threshold):
+    query = remove_stopwords_from_query(query)
     ranked_images = []
     for image in images:
         literal_sim = get_literal_similarity(query, image["tags"])
@@ -136,41 +155,6 @@ def delete_from_database(image_id):
     response = supabase.table("images").delete().eq("id", image_id).execute()
 
     st.success("Image deleted successfully.")
-    # if response["error"] is None:
-    #     st.success("Image deleted successfully.")
-    # else:
-    #     st.error("Failed to delete image.")
-    #     st.error(response["error"])
-
-
-# def delete_from_bucket(image_url):
-#     """
-#     Deletes an image file from the Supabase storage bucket.
-
-#     Args:
-#         image_url (str): The URL of the image to delete.
-#     """
-#     # Extract the bucket name and file path from the URL
-#     bucket_name = "your_bucket_name"  # Replace with your Supabase bucket name
-#     file_path = image_url.split(
-#         f"{SUPABASE_URL}/storage/v1/object/public/{bucket_name}/"
-#     )[-1]
-
-#     response = supabase.storage.from_(bucket_name).remove([file_path])
-
-#     if response.get("error") is None:
-#         st.success("Image deleted from the storage bucket.")
-#     else:
-#         st.error("Failed to delete image from the storage bucket.")
-#         st.error(response.get("error"))
-
-
-# def delete_image(image_id, image_url):
-#     # Delete from database
-#     delete_from_database(image_id)  # Custom function to delete entry from DB
-
-# # Delete from storage bucket
-# delete_from_bucket(image_url)  # Custom function to delete from Supabase bucket
 
 
 @st.fragment
@@ -365,6 +349,7 @@ def header():
             """,
             unsafe_allow_html=True,
         )
+
 
 header()  # Displays the header with the refresh button
 uploader()  # Displays the uploader
